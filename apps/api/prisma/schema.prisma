@@ -1,0 +1,53 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Scientist {
+  id            Int             @id @default(autoincrement())
+  fullName      String
+  country       String
+  degree        String
+  specialization String
+  organization  String
+
+  participations Participation[]
+}
+
+model Conference {
+  id           Int             @id @default(autoincrement())
+  topic        String
+  name         String
+  date         DateTime
+  country      String
+  location     String
+
+  participations Participation[]
+}
+
+model Participation {
+  id              Int        @id @default(autoincrement())
+  talkTitle       String
+  participationType String
+  durationMinutes Int
+
+  scientistId     Int
+  conferenceId    Int
+
+  metadata        Json?
+
+  scientist       Scientist  @relation(fields: [scientistId], references: [id])
+  conference      Conference @relation(fields: [conferenceId], references: [id])
+
+  @@index([scientistId])
+  @@index([conferenceId])
+}

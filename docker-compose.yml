@@ -1,0 +1,70 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sconf_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sconf_network
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: sconf_api
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - DATABASE_URL=postgresql://app:app@postgres:5432/app?schema=public
+      - CORS_ORIGIN=http://localhost:3001
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/api:/app/apps/api
+      - /app/apps/api/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - sconf_network
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: sconf_web
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - NITRO_HOST=0.0.0.0
+      - NITRO_PORT=3001
+      - NUXT_PUBLIC_API_BASE_URL=http://localhost:3000
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./apps/web:/app/apps/web
+      - /app/apps/web/node_modules
+    depends_on:
+      - api
+    networks:
+      - sconf_network
+
+volumes:
+  postgres_data:
+
+networks:
+  sconf_network:
+    driver: bridge
