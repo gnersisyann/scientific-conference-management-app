@@ -1,8 +1,8 @@
 node_modules
-.git
-.env
-*.log
-dist
-.next
+npm-debug.log
 .nuxt
-coverage
+.output
+.git
+.gitignore
+README.md
+.env
