@@ -1,8 +1,9 @@
 node_modules
 npm-debug.log
-.nuxt
-.output
+dist
 .git
 .gitignore
 README.md
 .env
+.nyc_output
+coverage
