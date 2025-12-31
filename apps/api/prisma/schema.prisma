@@ -7,46 +7,61 @@
 datasource db {
   provider = "postgresql"
 }
+
 generator client {
   provider = "prisma-client-js"
 }
 
 model Scientist {
-  id            Int             @id @default(autoincrement())
-  fullName      String
-  country       String
-  degree        String
+  id             Int    @id @default(autoincrement())
+  fullName       String
+  country        String
+  degree         String
   specialization String
-  organization  String
+  organization   String
 
   participations Participation[]
+
+  // migration
+  email String? @unique
+  orcid String?
+  hIndex Int @default(0)
+  @@index([country, specialization])
 }
 
 model Conference {
-  id           Int             @id @default(autoincrement())
-  topic        String
-  name         String
-  date         DateTime
-  country      String
-  location     String
+  id       Int      @id @default(autoincrement())
+  topic    String
+  name     String
+  date     DateTime
+  country  String
+  location String
 
   participations Participation[]
+
+  //migration
+  capacity Int @default(0)
+  @@index([country,topic])
 }
 
 model Participation {
-  id              Int        @id @default(autoincrement())
-  talkTitle       String
+  id                Int    @id @default(autoincrement())
+  talkTitle         String
   participationType String
-  durationMinutes Int
+  durationMinutes   Int
 
-  scientistId     Int
-  conferenceId    Int
+  scientistId  Int
+  conferenceId Int
 
-  metadata        Json?
+  metadata Json?
 
-  scientist       Scientist  @relation(fields: [scientistId], references: [id])
-  conference      Conference @relation(fields: [conferenceId], references: [id])
+  scientist  Scientist  @relation(fields: [scientistId], references: [id])
+  conference Conference @relation(fields: [conferenceId], references: [id])
 
   @@index([scientistId])
   @@index([conferenceId])
+
+  // migration
+  status String @default("confirmed")
+  @@index([participationType])
 }
