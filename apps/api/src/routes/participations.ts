@@ -11,7 +11,8 @@ const ParticipationSchema = z.object({
   durationMinutes: z.number().int().positive(),
   scientistId: z.number().int().positive(),
   conferenceId: z.number().int().positive(),
-  metadata: z.record(z.string(), z.any()).optional()
+  status: z.string(),
+  metadata: z.record(z.string(), z.any()).nullable()
 }).openapi('Participation')
 
 const CreateParticipationSchema = z.object({
@@ -20,6 +21,7 @@ const CreateParticipationSchema = z.object({
   durationMinutes: z.number().min(1, 'Duration must be at least 1 minute'),
   scientistId: z.number().int().positive('Valid scientist ID required'),
   conferenceId: z.number().int().positive('Valid conference ID required'),
+  status: z.string().optional(),
   metadata: z.record(z.string(), z.any()).optional()
 }).openapi('CreateParticipation')
 
@@ -49,6 +51,19 @@ const ErrorSchema = z.object({
   error: z.string()
 }).openapi('Error')
 
+function formatParticipation(p: any) {
+  return {
+    id: p.id,
+    talkTitle: p.talkTitle,
+    participationType: p.participationType,
+    durationMinutes: p.durationMinutes,
+    scientistId: p.scientistId,
+    conferenceId: p.conferenceId,
+    status: p.status,
+    metadata: typeof p.metadata === 'object' ? p.metadata : null
+  }
+}
+
 const getParticipationsRoute = createRoute({
   method: 'get',
   path: '/',
@@ -62,6 +77,7 @@ const getParticipationsRoute = createRoute({
       sortBy: z.string().optional().default('id').openapi({ description: 'Field to sort by' }),
       sortOrder: z.enum(['asc', 'desc']).optional().default('asc').openapi({ description: 'Sort order' }),
       participationType: z.string().optional().openapi({ description: 'Filter by participation type' }),
+      status: z.string().optional().openapi({ description: 'Filter by status' }),
       scientistId: z.string().optional().openapi({ description: 'Filter by scientist ID' }),
       conferenceId: z.string().optional().openapi({ description: 'Filter by conference ID' })
     })
@@ -79,7 +95,7 @@ const getParticipationsRoute = createRoute({
 })
 
 participations.openapi(getParticipationsRoute, async (c) => {
-  const { page, limit, sortBy, sortOrder, participationType, scientistId, conferenceId } = c.req.valid('query')
+  const { page, limit, sortBy, sortOrder, participationType, status, scientistId, conferenceId } = c.req.valid('query')
   
   const pageNum = parseInt(page)
   const limitNum = parseInt(limit)
@@ -87,33 +103,22 @@ participations.openapi(getParticipationsRoute, async (c) => {
 
   const where: any = {}
   if (participationType) where.participationType = { contains: participationType, mode: 'insensitive' }
+  if (status) where.status = { contains: status, mode: 'insensitive' }
   if (scientistId) where.scientistId = parseInt(scientistId)
   if (conferenceId) where.conferenceId = parseInt(conferenceId)
 
-  const [participations, total] = await Promise.all([
+  const [data, total] = await Promise.all([
     prisma.participation.findMany({
       where,
       skip,
       take: limitNum,
-      orderBy: { [sortBy]: sortOrder },
-      include: {
-        scientist: true,
-        conference: true
-      }
+      orderBy: { [sortBy]: sortOrder }
     }),
     prisma.participation.count({ where })
   ])
 
   return c.json({
-    data: participations.map(p => ({
-      id: p.id,
-      talkTitle: p.talkTitle,
-      participationType: p.participationType,
-      durationMinutes: p.durationMinutes,
-      scientistId: p.scientistId,
-      conferenceId: p.conferenceId,
-      metadata: p.metadata as Record<string, any> | undefined
-    })),
+    data: data.map(formatParticipation),
     pagination: {
       page: pageNum,
       limit: limitNum,
@@ -157,26 +162,14 @@ participations.openapi(getParticipationRoute, async (c) => {
   const { id } = c.req.valid('param')
   
   const participation = await prisma.participation.findUnique({
-    where: { id },
-    include: {
-      scientist: true,
-      conference: true
-    }
+    where: { id }
   })
 
   if (!participation) {
     return c.json({ error: 'Participation not found' }, 404)
   }
 
-  return c.json({
-    id: participation.id,
-    talkTitle: participation.talkTitle,
-    participationType: participation.participationType,
-    durationMinutes: participation.durationMinutes,
-    scientistId: participation.scientistId,
-    conferenceId: participation.conferenceId,
-    metadata: participation.metadata as Record<string, any> | undefined
-  }, 200)
+  return c.json(formatParticipation(participation), 200)
 })
 
 const createParticipationRoute = createRoute({
@@ -218,22 +211,18 @@ participations.openapi(createParticipationRoute, async (c) => {
   
   try {
     const participation = await prisma.participation.create({
-      data,
-      include: {
-        scientist: true,
-        conference: true
+      data: {
+        talkTitle: data.talkTitle,
+        participationType: data.participationType,
+        durationMinutes: data.durationMinutes,
+        scientistId: data.scientistId,
+        conferenceId: data.conferenceId,
+        status: data.status || 'confirmed',
+        metadata: data.metadata
       }
     })
 
-    return c.json({
-      id: participation.id,
-      talkTitle: participation.talkTitle,
-      participationType: participation.participationType,
-      durationMinutes: participation.durationMinutes,
-      scientistId: participation.scientistId,
-      conferenceId: participation.conferenceId,
-      metadata: participation.metadata as Record<string, any> | undefined
-    }, 201)
+    return c.json(formatParticipation(participation), 201)
   } catch (error) {
     return c.json({ error: 'Failed to create participation. Check if scientist and conference exist.' }, 400)
   }
@@ -283,22 +272,10 @@ participations.openapi(updateParticipationRoute, async (c) => {
   try {
     const participation = await prisma.participation.update({
       where: { id },
-      data,
-      include: {
-        scientist: true,
-        conference: true
-      }
+      data
     })
 
-    return c.json({
-      id: participation.id,
-      talkTitle: participation.talkTitle,
-      participationType: participation.participationType,
-      durationMinutes: participation.durationMinutes,
-      scientistId: participation.scientistId,
-      conferenceId: participation.conferenceId,
-      metadata: participation.metadata as Record<string, any> | undefined
-    }, 200)
+    return c.json(formatParticipation(participation), 200)
   } catch (error) {
     return c.json({ error: 'Participation not found' }, 404)
   }

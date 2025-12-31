@@ -10,7 +10,10 @@ const ScientistSchema = z.object({
   country: z.string(),
   degree: z.string(),
   specialization: z.string(),
-  organization: z.string()
+  organization: z.string(),
+  email: z.string().email().nullable(),
+  orcid: z.string().nullable(),
+  hIndex: z.number().int().nonnegative()
 }).openapi('Scientist')
 
 const CreateScientistSchema = z.object({
@@ -18,7 +21,10 @@ const CreateScientistSchema = z.object({
   country: z.string().min(1, 'Country is required'),
   degree: z.string().min(1, 'Degree is required'),
   specialization: z.string().min(1, 'Specialization is required'),
-  organization: z.string().min(1, 'Organization is required')
+  organization: z.string().min(1, 'Organization is required'),
+  email: z.string().email().optional(),
+  orcid: z.string().optional(),
+  hIndex: z.number().int().nonnegative().optional()
 }).openapi('CreateScientist')
 
 const UpdateScientistSchema = CreateScientistSchema.partial().openapi('UpdateScientist')
@@ -81,25 +87,18 @@ scientists.openapi(getScientistsRoute, async (c) => {
     ]
   } : {}
 
-  const [scientists, total] = await Promise.all([
+  const [data, total] = await Promise.all([
     prisma.scientist.findMany({
       where,
       skip,
       take: limitNum,
-      orderBy: { [sortBy]: sortOrder },
-      include: {
-        participations: {
-          include: {
-            conference: true
-          }
-        }
-      }
+      orderBy: { [sortBy]: sortOrder }
     }),
     prisma.scientist.count({ where })
   ])
 
   return c.json({
-    data: scientists,
+    data,
     pagination: {
       page: pageNum,
       limit: limitNum,
@@ -108,7 +107,6 @@ scientists.openapi(getScientistsRoute, async (c) => {
     }
   })
 })
-
 
 const getScientistRoute = createRoute({
   method: 'get',
@@ -144,14 +142,7 @@ scientists.openapi(getScientistRoute, async (c) => {
   const { id } = c.req.valid('param')
   
   const scientist = await prisma.scientist.findUnique({
-    where: { id },
-    include: {
-      participations: {
-        include: {
-          conference: true
-        }
-      }
-    }
+    where: { id }
   })
 
   if (!scientist) {
@@ -160,7 +151,6 @@ scientists.openapi(getScientistRoute, async (c) => {
 
   return c.json(scientist, 200)
 })
-
 
 const createScientistRoute = createRoute({
   method: 'post',
@@ -192,10 +182,7 @@ scientists.openapi(createScientistRoute, async (c) => {
   const data = c.req.valid('json')
   
   const scientist = await prisma.scientist.create({
-    data,
-    include: {
-      participations: true
-    }
+    data
   })
 
   return c.json(scientist, 201)
@@ -245,10 +232,7 @@ scientists.openapi(updateScientistRoute, async (c) => {
   try {
     const scientist = await prisma.scientist.update({
       where: { id },
-      data,
-      include: {
-        participations: true
-      }
+      data
     })
 
     return c.json(scientist, 200)

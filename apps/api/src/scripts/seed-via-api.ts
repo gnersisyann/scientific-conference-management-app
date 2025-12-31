@@ -6,6 +6,9 @@ type ScientistInput = {
   degree: string
   specialization: string
   organization: string
+  email?: string
+  orcid?: string
+  hIndex?: number
 }
 
 type ConferenceInput = {
@@ -14,6 +17,7 @@ type ConferenceInput = {
   date: string
   country: string
   location: string
+  capacity?: number
 }
 
 type ParticipationInput = {
@@ -22,6 +26,7 @@ type ParticipationInput = {
   durationMinutes: number
   scientistId: number
   conferenceId: number
+  status?: string
   metadata?: Record<string, unknown>
 }
 
@@ -59,15 +64,19 @@ async function seedScientists(count = 30) {
   const degrees = ['PhD', 'Doctor of Sciences', 'Master', 'Professor']
   const specs = ['AI', 'Biology', 'Physics', 'Chemistry', 'Math', 'Data Science', 'Robotics']
   const orgs = ['MIT', 'Stanford', 'Cambridge', 'Oxford', 'ETH Zurich', 'CNRS', 'Max Planck']
+  const domains = ['mit.edu', 'stanford.edu', 'cam.ac.uk', 'ox.ac.uk', 'ethz.ch', 'cnrs.fr', 'mpg.de']
 
   const created: number[] = []
   for (let i = 1; i <= count; i++) {
     const scientist: ScientistInput = {
-      fullName: `Scientist ${i}`,
+      fullName: `Dr. Scientist ${i}`,
       country: pick(countries),
       degree: pick(degrees),
       specialization: pick(specs),
       organization: pick(orgs),
+      email: `scientist${i}@${pick(domains)}`,
+      orcid: `000${i}-000${randomInt(1000, 9999)}-${randomInt(1000, 9999)}-${randomInt(100, 999)}X`,
+      hIndex: randomInt(0, 100)
     }
 
     const s = await http<{ id: number }>('/scientists', scientist)
@@ -90,10 +99,11 @@ async function seedConferences(count = 20) {
 
     const conf: ConferenceInput = {
       topic: pick(topics),
-      name: `Conference ${i}`,
+      name: `${pick(topics)} Conference ${i}`,
       date: date.toISOString(),
       country: pick(countries),
       location: pick(cities),
+      capacity: randomInt(100, 500)
     }
 
     const c = await http<{ id: number }>('/conferences', conf)
@@ -104,6 +114,7 @@ async function seedConferences(count = 20) {
 
 async function seedParticipations(scientistIds: number[], conferenceIds: number[], count = 60) {
   const types = ['Keynote', 'Workshop', 'Poster', 'Panel']
+  const statuses = ['confirmed', 'pending', 'declined', 'completed']
   const titles = [
     'Advances in AI',
     'Future of Robotics',
@@ -111,6 +122,10 @@ async function seedParticipations(scientistIds: number[], conferenceIds: number[
     'Quantum Breakthroughs',
     'Biotech Innovations',
     'Space Exploration',
+    'Machine Learning Trends',
+    'Sustainable Technologies',
+    'Quantum Computing Applications',
+    'Genetic Engineering Ethics'
   ]
 
   for (let i = 0; i < count; i++) {
@@ -120,11 +135,14 @@ async function seedParticipations(scientistIds: number[], conferenceIds: number[
       durationMinutes: randomInt(15, 90),
       scientistId: pick(scientistIds),
       conferenceId: pick(conferenceIds),
+      status: pick(statuses),
       metadata: {
         rating: randomInt(1, 5),
         slidesUrl: `https://example.com/slides/${i + 1}`,
+        recordingUrl: `https://example.com/recordings/${i + 1}`,
         tags: [pick(titles), pick(types)],
-      },
+        attendees: randomInt(10, 200)
+      }
     }
 
     await http('/participations', participation)
@@ -133,15 +151,22 @@ async function seedParticipations(scientistIds: number[], conferenceIds: number[
 
 async function main() {
   console.log(`Seeding via API at ${API_BASE}`)
-  const scientists = await seedScientists(30)
-  console.log(`Created scientists: ${scientists.length}`)
-  const conferences = await seedConferences(15)
-  console.log(`Created conferences: ${conferences.length}`)
-  await seedParticipations(scientists, conferences, 80)
-  console.log(`Created participations: 80`)
+  
+  try {
+    const scientists = await seedScientists(30)
+    console.log(`✓ Created scientists: ${scientists.length}`)
+    
+    const conferences = await seedConferences(15)
+    console.log(`✓ Created conferences: ${conferences.length}`)
+    
+    await seedParticipations(scientists, conferences, 80)
+    console.log(`✓ Created participations: 80`)
+    
+    console.log('\nSeeding completed successfully!')
+  } catch (err) {
+    console.error('✗ Seeding failed:', err)
+    process.exit(1)
+  }
 }
 
-main().catch((err) => {
-  console.error('Seeding failed:', err)
-  process.exit(1)
-})
+main()

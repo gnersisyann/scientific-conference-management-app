@@ -10,7 +10,8 @@ const ConferenceSchema = z.object({
   name: z.string(),
   date: z.string().datetime(),
   country: z.string(),
-  location: z.string()
+  location: z.string(),
+  capacity: z.number().int().nonnegative()
 }).openapi('Conference')
 
 const ConferenceWithParticipationsSchema = ConferenceSchema.extend({
@@ -22,7 +23,8 @@ const CreateConferenceSchema = z.object({
   name: z.string().min(1, 'Name is required'), 
   date: z.string().datetime('Invalid datetime format'),
   country: z.string().min(1, 'Country is required'),
-  location: z.string().min(1, 'Location is required')
+  location: z.string().min(1, 'Location is required'),
+  capacity: z.number().int().nonnegative().optional()
 }).openapi('CreateConference')
 
 const UpdateConferenceSchema = CreateConferenceSchema.partial().openapi('UpdateConference')
@@ -82,25 +84,18 @@ conferences.openapi(getConferencesRoute, async (c) => {
   if (country) where.country = { contains: country, mode: 'insensitive' }
   if (topic) where.topic = { contains: topic, mode: 'insensitive' }
 
-  const [conferences, total] = await Promise.all([
+  const [data, total] = await Promise.all([
     prisma.conference.findMany({
       where,
       skip,
       take: limitNum,
-      orderBy: { [sortBy]: sortOrder },
-      include: {
-        participations: {
-          include: {
-            scientist: true
-          }
-        }
-      }
+      orderBy: { [sortBy]: sortOrder }
     }),
     prisma.conference.count({ where })
   ])
 
   return c.json({
-    data: conferences,
+    data,
     pagination: {
       page: pageNum,
       limit: limitNum,
@@ -193,7 +188,8 @@ conferences.openapi(createConferenceRoute, async (c) => {
   const conference = await prisma.conference.create({
     data: {
       ...data,
-      date: new Date(data.date)
+      date: new Date(data.date),
+      capacity: data.capacity || 0
     }
   })
 
