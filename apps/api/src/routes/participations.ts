@@ -15,6 +15,29 @@ const ParticipationSchema = z.object({
   metadata: z.record(z.string(), z.any()).nullable()
 }).openapi('Participation')
 
+const ParticipationWithDetailsSchema = z.object({
+  id: z.number().int().positive(),
+  talkTitle: z.string(),
+  participationType: z.string(),
+  durationMinutes: z.number().int().positive(),
+  status: z.string(),
+  metadata: z.record(z.string(), z.any()).nullable(),
+  scientist: z.object({
+    id: z.number(),
+    fullName: z.string(),
+    country: z.string(),
+    specialization: z.string(),
+    hIndex: z.number()
+  }),
+  conference: z.object({
+    id: z.number(),
+    name: z.string(),
+    topic: z.string(),
+    date: z.string(),
+    location: z.string()
+  })
+}).openapi('ParticipationWithDetails')
+
 const CreateParticipationSchema = z.object({
   talkTitle: z.string().min(1, 'Talk title is required'),
   participationType: z.string().min(1, 'Participation type is required'),
@@ -38,6 +61,11 @@ const ParticipationsResponseSchema = z.object({
   data: z.array(ParticipationSchema),
   pagination: PaginationSchema
 }).openapi('ParticipationsResponse')
+
+const ParticipationsWithDetailsResponseSchema = z.object({
+  data: z.array(ParticipationWithDetailsSchema),
+  pagination: PaginationSchema
+}).openapi('ParticipationsWithDetailsResponse')
 
 const SearchResultSchema = z.object({
   data: z.array(z.any()),
@@ -125,6 +153,163 @@ participations.openapi(getParticipationsRoute, async (c) => {
       total,
       pages: Math.ceil(total / limitNum)
     }
+  })
+})
+
+const getParticipationsWithJoinRoute = createRoute({
+  method: 'get',
+  path: '/with-details',
+  tags: ['Participations'],
+  summary: 'Get participations with JOIN (scientist and conference details)',
+  description: 'Returns participations with related scientist and conference data using JOIN',
+  request: {
+    query: z.object({
+      page: z.string().optional().default('1').openapi({ description: 'Page number' }),
+      limit: z.string().optional().default('10').openapi({ description: 'Items per page' }),
+      participationType: z.string().optional().openapi({ description: 'Filter by participation type' })
+    })
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: ParticipationsWithDetailsResponseSchema
+        }
+      },
+      description: 'Participations with details retrieved'
+    }
+  }
+})
+
+participations.openapi(getParticipationsWithJoinRoute, async (c) => {
+  const { page, limit, participationType } = c.req.valid('query')
+  
+  const pageNum = parseInt(page)
+  const limitNum = parseInt(limit)
+  const skip = (pageNum - 1) * limitNum
+
+  const where: any = {}
+  if (participationType) {
+    where.participationType = { contains: participationType, mode: 'insensitive' }
+  }
+
+  const [data, total] = await Promise.all([
+    prisma.participation.findMany({
+      where,
+      skip,
+      take: limitNum,
+      include: {
+        scientist: {
+          select: {
+            id: true,
+            fullName: true,
+            country: true,
+            specialization: true,
+            hIndex: true
+          }
+        },
+        conference: {
+          select: {
+            id: true,
+            name: true,
+            topic: true,
+            date: true,
+            location: true
+          }
+        }
+      },
+      orderBy: { id: 'desc' }
+    }),
+    prisma.participation.count({ where })
+  ])
+
+  return c.json({
+    data: data.map((p: any) => ({
+      id: p.id,
+      talkTitle: p.talkTitle,
+      participationType: p.participationType,
+      durationMinutes: p.durationMinutes,
+      status: p.status,
+      metadata: typeof p.metadata === 'object' ? p.metadata : null,
+      scientist: p.scientist,
+      conference: {
+        id: p.conference.id,
+        name: p.conference.name,
+        topic: p.conference.topic,
+        date: p.conference.date.toISOString(),
+        location: p.conference.location
+      }
+    })),
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total,
+      pages: Math.ceil(total / limitNum)
+    }
+  })
+})
+
+const bulkUpdateParticipationsRoute = createRoute({
+  method: 'patch',
+  path: '/bulk-update-status',
+  tags: ['Participations'],
+  summary: 'Bulk UPDATE with complex WHERE condition',
+  description: 'Update status of multiple participations based on conference date and current status',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            conferenceId: z.number().int().positive(),
+            oldStatus: z.string(),
+            newStatus: z.string(),
+            beforeDate: z.string().datetime().optional()
+          })
+        }
+      }
+    }
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            message: z.string(),
+            updated: z.number()
+          })
+        }
+      },
+      description: 'Bulk update completed'
+    }
+  }
+})
+
+participations.openapi(bulkUpdateParticipationsRoute, async (c) => {
+  const { conferenceId, oldStatus, newStatus, beforeDate } = c.req.valid('json')
+
+  const where: any = {
+    conferenceId,
+    status: oldStatus
+  }
+
+  if (beforeDate) {
+    where.conference = {
+      date: {
+        lt: new Date(beforeDate)
+      }
+    }
+  }
+
+  const result = await prisma.participation.updateMany({
+    where,
+    data: {
+      status: newStatus
+    }
+  })
+
+  return c.json({
+    message: `Updated ${result.count} participations from '${oldStatus}' to '${newStatus}'`,
+    updated: result.count
   })
 })
 
@@ -330,7 +515,7 @@ const searchParticipationsRoute = createRoute({
   path: '/search',
   tags: ['Participations'],
   summary: 'Search participations by metadata',
-  description: 'Fulltext search in JSON metadata using PostgreSQL regex',
+  description: 'Fulltext search in JSON metadata using PostgreSQL regex with pg_trgm + GIN index',
   request: {
     query: z.object({
       q: z.string().min(1).openapi({ description: 'Search query for metadata field' }),

@@ -41,6 +41,14 @@ const ConferencesResponseSchema = z.object({
   pagination: PaginationSchema
 }).openapi('ConferencesResponse')
 
+const ConferenceStatsSchema = z.object({
+  country: z.string(),
+  totalConferences: z.number(),
+  totalParticipations: z.number(),
+  avgCapacity: z.number(),
+  topicDistribution: z.record(z.string(), z.number())
+}).openapi('ConferenceStats')
+
 const ErrorSchema = z.object({
   error: z.string()
 }).openapi('Error')
@@ -102,6 +110,71 @@ conferences.openapi(getConferencesRoute, async (c) => {
       total,
       pages: Math.ceil(total / limitNum)
     }
+  })
+})
+
+const getConferenceStatsRoute = createRoute({
+  method: 'get',
+  path: '/stats',
+  tags: ['Conferences'],
+  summary: 'Conference statistics with GROUP BY',
+  description: 'Get aggregated statistics grouped by country with topic distribution',
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            data: z.array(ConferenceStatsSchema)
+          })
+        }
+      },
+      description: 'Statistics retrieved'
+    }
+  }
+})
+
+conferences.openapi(getConferenceStatsRoute, async (c) => {
+  const stats = await prisma.conference.groupBy({
+    by: ['country'],
+    _count: {
+      id: true
+    },
+    _avg: {
+      capacity: true
+    }
+  })
+
+  const detailedStats = await Promise.all(
+    stats.map(async (stat: { country: string; _count: { id: number }; _avg: { capacity: number | null } }) => {
+      const conferences = await prisma.conference.findMany({
+        where: { country: stat.country },
+        include: {
+          _count: {
+            select: { participations: true }
+          }
+        }
+      })
+
+      const topicCounts: Record<string, number> = {}
+      let totalParticipations = 0
+
+      conferences.forEach((conf: { topic: string; _count: { participations: number } }) => {
+        topicCounts[conf.topic] = (topicCounts[conf.topic] || 0) + 1
+        totalParticipations += conf._count.participations
+      })
+
+      return {
+        country: stat.country,
+        totalConferences: stat._count.id,
+        totalParticipations,
+        avgCapacity: Math.round(stat._avg.capacity || 0),
+        topicDistribution: topicCounts
+      }
+    })
+  )
+
+  return c.json({
+    data: detailedStats
   })
 })
 

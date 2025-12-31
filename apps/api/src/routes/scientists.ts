@@ -108,6 +108,80 @@ scientists.openapi(getScientistsRoute, async (c) => {
   })
 })
 
+const advancedSearchScientistsRoute = createRoute({
+  method: 'get',
+  path: '/advanced-search',
+  tags: ['Scientists'],
+  summary: 'Advanced search with multiple WHERE conditions',
+  description: 'Search scientists with multiple filters combined (country, specialization, minHIndex, degree)',
+  request: {
+    query: z.object({
+      country: z.string().optional().openapi({ description: 'Filter by country' }),
+      specialization: z.string().optional().openapi({ description: 'Filter by specialization' }),
+      minHIndex: z.string().optional().openapi({ description: 'Minimum H-Index' }),
+      degree: z.string().optional().openapi({ description: 'Filter by degree' }),
+      page: z.string().optional().default('1').openapi({ description: 'Page number' }),
+      limit: z.string().optional().default('10').openapi({ description: 'Items per page' })
+    })
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': {
+          schema: ScientistsResponseSchema
+        }
+      },
+      description: 'Advanced search results'
+    }
+  }
+})
+
+scientists.openapi(advancedSearchScientistsRoute, async (c) => {
+  const { country, specialization, minHIndex, degree, page, limit } = c.req.valid('query')
+  
+  const pageNum = parseInt(page)
+  const limitNum = parseInt(limit)
+  const skip = (pageNum - 1) * limitNum
+
+  const where: any = {}
+  
+  if (country) {
+    where.country = { contains: country, mode: 'insensitive' }
+  }
+  
+  if (specialization) {
+    where.specialization = { contains: specialization, mode: 'insensitive' }
+  }
+  
+  if (minHIndex) {
+    where.hIndex = { gte: parseInt(minHIndex) }
+  }
+  
+  if (degree) {
+    where.degree = { contains: degree, mode: 'insensitive' }
+  }
+
+  const [data, total] = await Promise.all([
+    prisma.scientist.findMany({
+      where,
+      skip,
+      take: limitNum,
+      orderBy: { hIndex: 'desc' }
+    }),
+    prisma.scientist.count({ where })
+  ])
+
+  return c.json({
+    data,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total,
+      pages: Math.ceil(total / limitNum)
+    }
+  })
+})
+
 const getScientistRoute = createRoute({
   method: 'get',
   path: '/{id}',
